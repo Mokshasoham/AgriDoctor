@@ -1,11 +1,12 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://pohnkzwdprodcodkfdze.supabase.co'
 const supabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  'placeholder'
+  'sb_publishable_3l165GUIHt6zY6xoLt6Q2Q_qvVR6Apy'
 
 // Routes that do NOT require auth.
 const PUBLIC_PATHS = ['/login', '/signup', '/auth', '/favicon.ico']
