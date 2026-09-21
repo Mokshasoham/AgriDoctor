@@ -43,7 +43,14 @@ async function tryOpenRouterStream(messages: ChatMsg[]): Promise<Response | null
 async function callGeminiText(systemPrompt: string, messages: ChatMsg[]): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return null
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+  const models = [
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+  ]
   const userText = messages
     .map((m) => (m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
     .join('\n\n')
