@@ -126,11 +126,22 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
   title TEXT NOT NULL,
-  message TEXT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('info', 'warning', 'alert', 'success')),
+  message TEXT,
+  body TEXT,
+  type TEXT NOT NULL,
   read BOOLEAN NOT NULL DEFAULT FALSE,
+  metadata JSONB DEFAULT '{}',
+  read_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE public.notifications
+  ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS read_at TIMESTAMP WITH TIME ZONE,
+  ADD COLUMN IF NOT EXISTS body TEXT;
+
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+
 
 -- ============================================================
 -- 10. CROP TASKS TABLE
