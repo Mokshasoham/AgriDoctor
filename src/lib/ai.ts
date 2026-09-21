@@ -193,10 +193,8 @@ const OPENROUTER_VISION_MODELS = [
 const GEMINI_MODELS = [
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
-  'gemini-3-flash-preview',
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.1-flash-lite',
 ]
 
 // ─── OpenRouter (chat completions) ────────────────────────────────────────────
@@ -252,16 +250,15 @@ async function callGemini(
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY missing')
 
-  // Iterate over models instead of calling a single one.
+  // Iterate over verified active models
   let lastErr: Error | null = null
   for (const model of GEMINI_MODELS) {
     try {
       const body: Record<string, unknown> = {
         contents: [{ role: 'user', parts }],
         generationConfig: {
-          maxOutputTokens: opts.maxTokens ?? 1500,
-          temperature: opts.temperature ?? 0.3,
-          thinkingConfig: { thinkingBudget: 0 },
+          maxOutputTokens: opts.maxTokens ?? 2000,
+          temperature: opts.temperature ?? 0.2,
         },
       }
       if (systemPrompt) {
@@ -279,10 +276,9 @@ async function callGemini(
 
       if (!res.ok) {
         const errBody = await res.text()
+        console.warn(`[Gemini] ${model} ${res.status}:`, errBody.slice(0, 150))
         lastErr = new Error(`Gemini ${model} ${res.status}: ${errBody.slice(0, 300)}`)
-        // 404 = model not found, 429 = rate limit, 5xx = server error → try next model
-        if (res.status === 404 || res.status === 429 || res.status >= 500) continue
-        throw lastErr
+        continue // Always try the next model on any error
       }
 
       const json = await res.json()
