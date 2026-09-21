@@ -43,33 +43,38 @@ async function tryOpenRouterStream(messages: ChatMsg[]): Promise<Response | null
 async function callGeminiText(systemPrompt: string, messages: ChatMsg[]): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return null
-  try {
-    const userText = messages
-      .map((m) => (m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
-      .join('\n\n')
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: userText }] }],
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          generationConfig: { maxOutputTokens: 1000, temperature: 0.7 },
-        }),
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+  const userText = messages
+    .map((m) => (m.role === 'user' ? `User: ${m.content}` : `Assistant: ${m.content}`))
+    .join('\n\n')
+
+  for (const model of models) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: userText }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: { maxOutputTokens: 1000, temperature: 0.7 },
+          }),
+        }
+      )
+      if (res.ok) {
+        const json = await res.json()
+        const text =
+          json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? ''
+        if (text.trim()) return text.trim()
+      } else {
+        console.warn(`[chat] Gemini ${model} failed:`, res.status)
       }
-    )
-    if (!res.ok) {
-      console.warn('[chat] Gemini fallback failed:', res.status, (await res.text()).slice(0, 200))
-      return null
+    } catch (err) {
+      console.warn(`[chat] Gemini ${model} error:`, err instanceof Error ? err.message : err)
     }
-    const json = await res.json()
-    const text = json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ?? ''
-    return text.trim() || null
-  } catch (err) {
-    console.warn('[chat] Gemini error:', err instanceof Error ? err.message : err)
-    return null
   }
+  return null
 }
 
 // ─── Build dynamic system prompt from user context ─────────────────────────────

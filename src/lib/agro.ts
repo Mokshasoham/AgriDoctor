@@ -4,8 +4,8 @@
 const AGRO_BASE = 'http://api.agromonitoring.com/agro/1.0'
 
 function requireKey(): string {
-  const key = process.env.AGRO_API_KEY
-  if (!key) throw new Error('AGRO_API_KEY not configured')
+  const key = process.env.AGRO_API_KEY || process.env.OPENWEATHER_API_KEY
+  if (!key) throw new Error('AGRO_API_KEY or OPENWEATHER_API_KEY not configured')
   return key
 }
 

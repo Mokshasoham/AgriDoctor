@@ -192,7 +192,9 @@ const OPENROUTER_VISION_MODELS = [
 // mirroring the same pattern used by callOpenRouterText.
 const GEMINI_MODELS = [
   'gemini-2.5-flash',
-  'gemini-2.5-flash-lite', // cheaper/faster fallback in the same family
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-2.5-flash-lite',
 ]
 
 // ─── OpenRouter (chat completions) ────────────────────────────────────────────
@@ -248,7 +250,7 @@ async function callGemini(
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY missing')
 
-  // FIX 1: Iterate over models instead of calling a single one.
+  // Iterate over models instead of calling a single one.
   let lastErr: Error | null = null
   for (const model of GEMINI_MODELS) {
     try {
@@ -257,12 +259,6 @@ async function callGemini(
         generationConfig: {
           maxOutputTokens: opts.maxTokens ?? 1500,
           temperature: opts.temperature ?? 0.3,
-          // FIX 2: gemini-2.5-flash has thinking enabled by default.
-          // Thinking tokens silently consume from maxOutputTokens, which
-          // at 1500 can exhaust the budget before any visible text is
-          // produced, returning an empty response. Disable thinking here
-          // since these helpers do structured/functional tasks, not
-          // deep reasoning. Remove this line if you want thinking enabled.
           thinkingConfig: { thinkingBudget: 0 },
         },
       }
@@ -282,9 +278,8 @@ async function callGemini(
       if (!res.ok) {
         const errBody = await res.text()
         lastErr = new Error(`Gemini ${model} ${res.status}: ${errBody.slice(0, 300)}`)
-        // 429 = rate limit, 5xx = server error → try next model
-        if (res.status === 429 || res.status >= 500) continue
-        // 4xx (e.g. 400 bad request, 403 auth) → no point retrying other models
+        // 404 = model not found, 429 = rate limit, 5xx = server error → try next model
+        if (res.status === 404 || res.status === 429 || res.status >= 500) continue
         throw lastErr
       }
 
