@@ -71,4 +71,5 @@ skills-lock.json
 .roo/
 .vibe/
 .zencoder/
+supabase/.temp/
 
