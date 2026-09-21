@@ -191,9 +191,10 @@ const OPENROUTER_VISION_MODELS = [
 // FIX 1: Use an array so callGemini can try fallback models on failure,
 // mirroring the same pattern used by callOpenRouterText.
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
+  'gemini-flash-latest',
   'gemini-3.6-flash',
+  'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
 ]
 

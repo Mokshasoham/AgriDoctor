@@ -92,16 +92,21 @@ export default function DiagnosePage() {
         throw new Error(json.error || 'AI analysis failed')
       }
 
+      if (!json.diagnosisId) {
+        throw new Error(json.error || 'Analysis succeeded but diagnosis record could not be saved.')
+      }
+
+      // Store in sessionStorage as a client-side backup
+      if (json.report) {
+        try {
+          sessionStorage.setItem('pending_diagnosis', JSON.stringify({ report: json.report, cropType }))
+        } catch {}
+      }
+
       setUiState('done')
 
-      // Redirect to result page
-      if (json.diagnosisId) {
-        router.push(`/diagnose/${json.diagnosisId}`)
-      } else {
-        // Store result in sessionStorage as fallback if DB save failed
-        sessionStorage.setItem('pending_diagnosis', JSON.stringify({ report: json.report, cropType }))
-        router.push('/diagnose/pending')
-      }
+      // Redirect directly to dynamic result page
+      router.push(`/diagnose/${json.diagnosisId}`)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unexpected error'
       setErrorMsg(msg)

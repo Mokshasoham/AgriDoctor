@@ -44,9 +44,10 @@ async function callGeminiText(systemPrompt: string, messages: ChatMsg[]): Promis
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) return null
   const models = [
-    'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
+    'gemini-flash-latest',
     'gemini-3.6-flash',
+    'gemini-3.5-flash',
     'gemini-3.1-flash-lite',
   ]
   const userText = messages

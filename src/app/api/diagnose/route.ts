@@ -21,6 +21,27 @@ The JSON must follow this exact schema:
   "urgency_days": number
 }`
 
+function normalizeSeverity(raw: unknown): 'low' | 'medium' | 'high' | 'critical' {
+  const s = String(raw ?? '').toLowerCase().trim()
+  if (s === 'low' || s === 'mild' || s === 'none') return 'low'
+  if (s === 'high' || s === 'severe') return 'high'
+  if (s === 'critical') return 'critical'
+  return 'medium'
+}
+
+function normalizeConfidence(raw: unknown): number {
+  if (typeof raw === 'number' && !isNaN(raw)) {
+    const val = raw <= 1 && raw > 0 ? Math.round(raw * 100) : Math.round(raw)
+    return Math.min(100, Math.max(0, val))
+  }
+  const cleaned = parseFloat(String(raw ?? '').replace(/[^0-9.]/g, ''))
+  if (!isNaN(cleaned)) {
+    const val = cleaned <= 1 && cleaned > 0 ? Math.round(cleaned * 100) : Math.round(cleaned)
+    return Math.min(100, Math.max(0, val))
+  }
+  return 85
+}
+
 function parseReport(rawContent: string): DiagnosisReport {
   const cleaned = rawContent.replace(/```json\n?/gi, '').replace(/```\n?/gi, '').trim()
   // Extract JSON object if any prose leaked in
@@ -34,6 +55,16 @@ function parseReport(rawContent: string): DiagnosisReport {
       throw new Error(`AI response missing required field: ${field}`)
     }
   }
+
+  // Normalize fields to ensure database constraint compatibility
+  parsed.severity = normalizeSeverity(parsed.severity)
+  parsed.confidence_pct = normalizeConfidence(parsed.confidence_pct)
+  parsed.is_diseased = Boolean(parsed.is_diseased)
+  parsed.symptoms = Array.isArray(parsed.symptoms) ? parsed.symptoms : []
+  parsed.organic_treatment = Array.isArray(parsed.organic_treatment) ? parsed.organic_treatment : []
+  parsed.chemical_treatment = Array.isArray(parsed.chemical_treatment) ? parsed.chemical_treatment : []
+  parsed.prevention_tips = Array.isArray(parsed.prevention_tips) ? parsed.prevention_tips : []
+
   return parsed
 }
 
@@ -79,6 +110,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Ensure user profile exists in public.users to satisfy the foreign key constraint
+    try {
+      await supabase.from('users').upsert(
+        {
+          id: user.id,
+          full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Farmer',
+        },
+        { onConflict: 'id' }
+      )
+    } catch (userUpsertErr) {
+      console.warn('[/api/diagnose] Note: user profile upsert warning:', userUpsertErr)
+    }
+
     const imageUrls: string[] = body.imageUrls ?? []
     const { data: diagnosis, error: dbError } = await supabase
       .from('diagnoses')
@@ -95,10 +139,17 @@ export async function POST(req: NextRequest) {
       .select('id')
       .single()
 
-    if (dbError) {
-      console.error('DB insert error:', dbError)
-      return NextResponse.json({ report, diagnosisId: null, warning: 'Result not saved to database' })
+    if (dbError || !diagnosis?.id) {
+      console.error('[/api/diagnose] DB insert error:', dbError)
+      return NextResponse.json(
+        {
+          error: `Database save failed: ${dbError?.message || 'Unable to record diagnosis in database'}`,
+          report,
+        },
+        { status: 500 }
+      )
     }
+
     return NextResponse.json({ report, diagnosisId: diagnosis.id })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
