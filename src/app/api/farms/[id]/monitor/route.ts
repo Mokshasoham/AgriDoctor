@@ -243,7 +243,18 @@ async function syncAlertNotifications(
     type: `alert_${a.level}`,
     title: `${farmName}: ${a.title}`,
     body: a.detail,
+    message: a.detail,
     metadata: { farm_id: farmId, alert_id: a.id, level: a.level, metric: a.metric ?? null },
   }))
-  await supabase.from('notifications').insert(rows)
+  const { error } = await supabase.from('notifications').insert(rows)
+  if (error && (error.message.includes('metadata') || error.message.includes('body'))) {
+    const fallbackRows = newAlerts.map((a) => ({
+      user_id: userId,
+      type: `alert_${a.level}`,
+      title: `${farmName}: ${a.title}`,
+      message: a.detail,
+      read: false,
+    }))
+    await supabase.from('notifications').insert(fallbackRows)
+  }
 }

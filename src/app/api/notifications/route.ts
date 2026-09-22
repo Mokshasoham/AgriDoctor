@@ -27,14 +27,57 @@ export async function GET(req: NextRequest) {
   else if (level === 'info') q = q.eq('type', 'info')
   if (farmId) q = q.contains('metadata', { farm_id: farmId })
 
-  const { data, error, count } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  let { data, error, count } = await q
 
-  const { count: unread } = await supabase
+  // Graceful fallback if database lacks 'metadata' or 'read_at' columns
+  if (error && (error.message.includes('metadata') || error.message.includes('read_at'))) {
+    console.warn('[/api/notifications] Full query failed, falling back to base schema:', error.message)
+    let fallbackQ = supabase
+      .from('notifications')
+      .select('id, type, title, message, read, created_at', { count: 'exact' })
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (unreadOnly) fallbackQ = fallbackQ.eq('read', false)
+    if (level === 'critical') fallbackQ = fallbackQ.eq('type', 'alert_critical')
+    else if (level === 'warning') fallbackQ = fallbackQ.eq('type', 'alert_warning')
+    else if (level === 'info') fallbackQ = fallbackQ.eq('type', 'info')
+
+    const fbRes = await fallbackQ
+    if (!fbRes.error) {
+      data = (fbRes.data ?? []).map((row: any) => ({
+        ...row,
+        metadata: {},
+        read_at: row.read ? row.created_at : null,
+      }))
+      count = fbRes.count
+      error = null
+    } else {
+      return NextResponse.json({ error: fbRes.error.message }, { status: 500 })
+    }
+  } else if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Calculate unread count
+  let unread = 0
+  const unreadRes = await supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
     .is('read_at', null)
+
+  if (unreadRes.error && unreadRes.error.message.includes('read_at')) {
+    const fallbackUnread = await supabase
+      .from('notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('read', false)
+    unread = fallbackUnread.count ?? 0
+  } else {
+    unread = unreadRes.count ?? 0
+  }
 
   return NextResponse.json({
     notifications: data ?? [],
@@ -56,38 +99,91 @@ export async function POST(req: NextRequest) {
 
   switch (body.action) {
     case 'mark_all_read': {
-      const { error } = await supabase.from('notifications')
-        .update({ read_at: now }).eq('user_id', user.id).is('read_at', null)
+      let { error } = await supabase
+        .from('notifications')
+        .update({ read_at: now, read: true })
+        .eq('user_id', user.id)
+        .is('read_at', null)
+
+      if (error && error.message.includes('read_at')) {
+        const fb = await supabase
+          .from('notifications')
+          .update({ read: true })
+          .eq('user_id', user.id)
+          .eq('read', false)
+        error = fb.error
+      }
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
     case 'mark_read': {
       if (!Array.isArray(body.ids) || body.ids.length === 0)
         return NextResponse.json({ error: 'ids required' }, { status: 400 })
-      const { error } = await supabase.from('notifications')
-        .update({ read_at: now }).eq('user_id', user.id).in('id', body.ids)
+
+      let { error } = await supabase
+        .from('notifications')
+        .update({ read_at: now, read: true })
+        .eq('user_id', user.id)
+        .in('id', body.ids)
+
+      if (error && error.message.includes('read_at')) {
+        const fb = await supabase
+          .from('notifications')
+          .update({ read: true })
+          .eq('user_id', user.id)
+          .in('id', body.ids)
+        error = fb.error
+      }
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
     case 'mark_unread': {
       if (!Array.isArray(body.ids) || body.ids.length === 0)
         return NextResponse.json({ error: 'ids required' }, { status: 400 })
-      const { error } = await supabase.from('notifications')
-        .update({ read_at: null }).eq('user_id', user.id).in('id', body.ids)
+
+      let { error } = await supabase
+        .from('notifications')
+        .update({ read_at: null, read: false })
+        .eq('user_id', user.id)
+        .in('id', body.ids)
+
+      if (error && error.message.includes('read_at')) {
+        const fb = await supabase
+          .from('notifications')
+          .update({ read: false })
+          .eq('user_id', user.id)
+          .in('id', body.ids)
+        error = fb.error
+      }
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
     case 'delete': {
       if (!Array.isArray(body.ids) || body.ids.length === 0)
         return NextResponse.json({ error: 'ids required' }, { status: 400 })
-      const { error } = await supabase.from('notifications')
-        .delete().eq('user_id', user.id).in('id', body.ids)
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', user.id)
+        .in('id', body.ids)
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
     case 'delete_all_read': {
-      const { error } = await supabase.from('notifications')
-        .delete().eq('user_id', user.id).not('read_at', 'is', null)
+      let { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('user_id', user.id)
+        .not('read_at', 'is', null)
+
+      if (error && error.message.includes('read_at')) {
+        const fb = await supabase
+          .from('notifications')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('read', true)
+        error = fb.error
+      }
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
