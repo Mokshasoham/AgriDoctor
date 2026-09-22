@@ -211,7 +211,7 @@ export default function FarmDetailPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <WeatherRadar lat={farm.lat} lng={farm.lng} height={420} />
+            <WeatherRadar lat={farm.lat} lng={farm.lng} height={420} apiKey={process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY} />
           </CardContent>
         </Card>
       )}

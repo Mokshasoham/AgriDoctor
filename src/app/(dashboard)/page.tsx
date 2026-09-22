@@ -631,6 +631,7 @@ export default async function DashboardPage() {
               lat={radarTarget.lat}
               lng={radarTarget.lng}
               height={420}
+              apiKey={process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-[280px] text-slate-400 text-sm">

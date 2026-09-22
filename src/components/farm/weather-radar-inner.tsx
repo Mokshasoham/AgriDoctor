@@ -154,17 +154,29 @@ export default function WeatherRadarInner({
   height = 380,
   defaultLayer = 'precipitation',
   compact = false,
+  apiKey: apiKeyProp,
 }: {
   lat: number
   lng: number
   height?: number
   defaultLayer?: LayerKey
   compact?: boolean
+  apiKey?: string
 }) {
-  const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY ?? ''
+  const apiKey = (apiKeyProp || process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || '').trim()
   const [layer, setLayer] = useState<LayerKey>(defaultLayer)
   const [mounted, setMounted] = useState(false)
   const [showSweep, setShowSweep] = useState(true)
+
+  // Debug check requested to verify environment variable resolution at runtime
+  if (typeof window !== 'undefined') {
+    console.log('[WeatherRadar] API key check:', {
+      typeof: typeof apiKey,
+      length: apiKey ? apiKey.length : 0,
+      isTruthy: Boolean(apiKey),
+      isPlaceholder: apiKey === 'your_openweather_api_key',
+    })
+  }
 
   const [rv, setRv] = useState<RvIndex | null>(null)
   const [rvError, setRvError] = useState<string | null>(null)
@@ -195,24 +207,42 @@ export default function WeatherRadarInner({
   }, [])
 
   const loadCurrent = useCallback(async () => {
-    if (!apiKey) return
     setCurrentLoading(true)
     try {
-      const r = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`,
-      )
-      if (!r.ok) throw new Error(`owm ${r.status}`)
-      const j = await r.json()
-      setCurrent({
-        temp: Math.round((j.main?.temp ?? 0) * 10) / 10,
-        humidity: j.main?.humidity ?? 0,
-        pressure: j.main?.pressure ?? 0,
-        wind: Math.round((j.wind?.speed ?? 0) * 10) / 10,
-        clouds: j.clouds?.all ?? 0,
-        rain1h: j.rain?.['1h'] ?? 0,
-        condition: j.weather?.[0]?.description ?? '—',
-        icon: j.weather?.[0]?.icon ?? '',
-      })
+      if (apiKey) {
+        const r = await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`,
+        )
+        if (!r.ok) throw new Error(`owm ${r.status}`)
+        const j = await r.json()
+        setCurrent({
+          temp: Math.round((j.main?.temp ?? 0) * 10) / 10,
+          humidity: j.main?.humidity ?? 0,
+          pressure: j.main?.pressure ?? 0,
+          wind: Math.round((j.wind?.speed ?? 0) * 10) / 10,
+          clouds: j.clouds?.all ?? 0,
+          rain1h: j.rain?.['1h'] ?? 0,
+          condition: j.weather?.[0]?.description ?? '—',
+          icon: j.weather?.[0]?.icon ?? '',
+        })
+      } else {
+        // Fallback to internal API route which uses server-side OPENWEATHER_API_KEY
+        const r = await fetch(`/api/weather?lat=${lat}&lng=${lng}`)
+        if (!r.ok) throw new Error(`internal weather ${r.status}`)
+        const j = await r.json()
+        if (j.current) {
+          setCurrent({
+            temp: Math.round((j.current.temp ?? 0) * 10) / 10,
+            humidity: j.current.humidity ?? 0,
+            pressure: j.current.pressure ?? 0,
+            wind: Math.round((j.current.wind_speed ?? 0) * 10) / 10,
+            clouds: j.current.clouds ?? 0,
+            rain1h: 0,
+            condition: j.current.weather?.description ?? '—',
+            icon: j.current.weather?.icon ?? '',
+          })
+        }
+      }
     } catch {
       // noop
     } finally {
@@ -252,7 +282,7 @@ export default function WeatherRadarInner({
   }, [activeFrame])
 
   const owmTileUrl = useMemo(
-    () => (layer !== 'precipitation'
+    () => (layer !== 'precipitation' && apiKey
       ? `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${apiKey}`
       : null),
     [layer, apiKey],
@@ -264,10 +294,42 @@ export default function WeatherRadarInner({
 
   const meta = LAYERS.find((l) => l.key === layer)!
 
-  if (!apiKey) {
+  // If apiKey is missing and the user selects an OWM-specific layer, prompt to switch back to Rain
+  if (!apiKey && layer !== 'precipitation') {
     return (
-      <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3">
-        Weather radar requires <code>NEXT_PUBLIC_OPENWEATHER_API_KEY</code> to be set.
+      <div className="space-y-3">
+        <div className="flex gap-1 flex-wrap">
+          {LAYERS.map((l) => (
+            <button
+              key={l.key}
+              type="button"
+              onClick={() => setLayer(l.key)}
+              className={`flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border transition-colors ${
+                layer === l.key
+                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-emerald-300'
+              }`}
+            >
+              <l.Icon className="w-3 h-3" />
+              {l.label}
+            </button>
+          ))}
+        </div>
+        <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold text-amber-900">OpenWeather API Key Required</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              The <strong>{meta.label}</strong> layer requires <code>NEXT_PUBLIC_OPENWEATHER_API_KEY</code>. Rain Radar is always available without an API key.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLayer('precipitation')}
+            className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 transition-colors self-start sm:self-center flex-shrink-0"
+          >
+            Switch to Rain Radar
+          </button>
+        </div>
       </div>
     )
   }
