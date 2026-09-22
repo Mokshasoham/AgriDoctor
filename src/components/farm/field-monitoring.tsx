@@ -420,8 +420,8 @@ export function FieldMonitoring({ farmId, farmLat, farmLng }: { farmId: string; 
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  <SatelliteTile label="NDVI" url={`${snap.ndvi.image.image.ndvi}&paletteid=1`} />
-                  <SatelliteTile label="True colour" url={snap.ndvi.image.image.truecolor} />
+                  <SatelliteTile label="NDVI" url={`/api/farms/${farmId}/satellite-image?type=ndvi&paletteid=1`} />
+                  <SatelliteTile label="True colour" url={`/api/farms/${farmId}/satellite-image?type=truecolor`} />
                 </div>
               </>
             ) : (
@@ -501,6 +501,11 @@ function MetricCard({
 function SatelliteTile({ label, url }: { label: string; url: string }) {
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setError(false)
+    setLoading(true)
+  }, [url])
 
   return (
     <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-100">

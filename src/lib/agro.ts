@@ -102,6 +102,21 @@ export async function satelliteImages(polyId: string, start: number, end: number
   return res.json()
 }
 
+// Sanitize Agro URLs: upgrade to HTTPS and ensure exactly one appid query parameter
+export function sanitizeAgroUrl(rawUrl?: string): string {
+  if (!rawUrl) return ''
+  try {
+    const key = requireKey()
+    const httpsUrl = rawUrl.replace(/^http:\/\//i, 'https://')
+    const parsed = new URL(httpsUrl)
+    parsed.searchParams.delete('appid')
+    parsed.searchParams.set('appid', key)
+    return parsed.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
 // NDVI stats for latest clear scene
 export async function latestNdviStats(polyId: string, days = 30): Promise<{ image: SatImage; stats: { min?: number; max?: number; mean?: number; median?: number; std?: number; num?: number } | null } | null> {
   const end = Math.floor(Date.now() / 1000)
@@ -111,22 +126,20 @@ export async function latestNdviStats(polyId: string, days = 30): Promise<{ imag
   // prefer lowest cloud coverage
   const sorted = [...images].sort((a, b) => (a.cl ?? 100) - (b.cl ?? 100))
   const best = sorted[0]
-  // Rewrite image URLs to include appid so the browser can fetch them directly
-  const key = requireKey()
-  const withKey = (u?: string) => (u ? `${u}${u.includes('?') ? '&' : '?'}appid=${key}` : u)
+  // Rewrite image URLs to HTTPS with a single valid appid
   const decoratedImage: SatImage = {
     ...best,
     image: {
-      truecolor: withKey(best.image.truecolor) ?? '',
-      falsecolor: withKey(best.image.falsecolor) ?? '',
-      ndvi: withKey(best.image.ndvi) ?? '',
-      evi: withKey(best.image.evi) ?? '',
+      truecolor: sanitizeAgroUrl(best.image?.truecolor),
+      falsecolor: sanitizeAgroUrl(best.image?.falsecolor),
+      ndvi: sanitizeAgroUrl(best.image?.ndvi),
+      evi: sanitizeAgroUrl(best.image?.evi),
     },
   }
-  const statsUrl = best.stats?.ndvi
+  const statsUrl = sanitizeAgroUrl(best.stats?.ndvi)
   if (!statsUrl) return { image: decoratedImage, stats: null }
   try {
-    const statsRes = await fetch(`${statsUrl}${statsUrl.includes('?') ? '&' : '?'}appid=${key}`)
+    const statsRes = await fetch(statsUrl)
     if (!statsRes.ok) return { image: decoratedImage, stats: null }
     return { image: decoratedImage, stats: await statsRes.json() }
   } catch {

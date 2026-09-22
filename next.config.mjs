@@ -16,6 +16,7 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'https', hostname: 'openweathermap.org' },
       { protocol: 'https', hostname: '*.supabase.co' },
+      { protocol: 'https', hostname: 'api.agromonitoring.com' },
     ],
   },
 };

@@ -11,6 +11,7 @@ import {
   latestNdviStats,
   accumulatedTemperature,
   accumulatedPrecipitation,
+  sanitizeAgroUrl,
 } from '@/lib/agro'
 import { computeAlerts, type MonitorSnapshot, type AlertPreferences } from '@/lib/alerts'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -36,6 +37,23 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const refresh = req.nextUrl.searchParams.get('refresh') === '1'
     const cacheFresh = farm.last_scan_at && Date.now() - new Date(farm.last_scan_at).getTime() < 10 * 60 * 1000
     if (!refresh && cacheFresh && farm.latest_monitor_snapshot) {
+      // Self-heal: ensure cached snapshot has clean HTTPS single-appid URLs
+      const snap = farm.latest_monitor_snapshot as any
+      if (snap?.ndvi?.image?.image) {
+        let modified = false
+        for (const k of ['truecolor', 'falsecolor', 'ndvi', 'evi'] as const) {
+          if (snap.ndvi.image.image[k]) {
+            const clean = sanitizeAgroUrl(snap.ndvi.image.image[k])
+            if (clean !== snap.ndvi.image.image[k]) {
+              snap.ndvi.image.image[k] = clean
+              modified = true
+            }
+          }
+        }
+        if (modified) {
+          await supabase.from('farms').update({ latest_monitor_snapshot: snap }).eq('id', farm.id)
+        }
+      }
       return NextResponse.json({ enabled: true, farm, snapshot: farm.latest_monitor_snapshot, cached: true })
     }
 
