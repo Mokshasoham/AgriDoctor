@@ -18,6 +18,39 @@ export async function updateSession(request: NextRequest) {
     return response
   }
 
+  const pathname = request.nextUrl.pathname
+  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
+  const isApi = pathname.startsWith('/api/')
+  const isNextInternal =
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/static/') ||
+    pathname.startsWith('/assets/')
+
+  // Fast path: static assets and internal Next.js files don't need auth checks
+  if (isNextInternal) {
+    return response
+  }
+
+  // Fast path: check if any Supabase auth cookie exists before doing any remote network call
+  const allCookies = request.cookies.getAll()
+  const hasAuthCookie = allCookies.some(
+    (c) => c.name.startsWith('sb-') && c.name.includes('-auth-token')
+  )
+
+  // If no auth cookie exists:
+  // - If it's a public route (e.g. /login), let them through immediately with 0ms network delay
+  // - If it's an API route, let the API route handle its own auth
+  // - If it's a protected page, redirect straight to /login without hanging on Supabase network calls
+  if (!hasAuthCookie) {
+    if (isPublic || isApi) {
+      return response
+    }
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    url.searchParams.set('redirect', pathname)
+    return NextResponse.redirect(url)
+  }
+
   try {
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
@@ -34,20 +67,19 @@ export async function updateSession(request: NextRequest) {
       },
     })
 
-    // IMPORTANT: keep between createServerClient and the return.
+    // Timeout after 2000ms so edge middleware NEVER triggers 504 MIDDLEWARE_INVOCATION_TIMEOUT
+    const getUserWithTimeout = Promise.race([
+      supabase.auth.getUser(),
+      new Promise<{ data: { user: null }; error: Error }>((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase auth timeout')), 2000)
+      ),
+    ])
+
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await getUserWithTimeout
 
-    const pathname = request.nextUrl.pathname
-    const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'))
-    const isApi = pathname.startsWith('/api/')
-    const isNextInternal =
-      pathname.startsWith('/_next/') ||
-      pathname.startsWith('/static/') ||
-      pathname.startsWith('/assets/')
-
-    if (!user && !isPublic && !isApi && !isNextInternal) {
+    if (!user && !isPublic && !isApi) {
       const url = request.nextUrl.clone()
       url.pathname = '/login'
       url.searchParams.set('redirect', pathname)
@@ -61,7 +93,14 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
   } catch (error) {
-    console.warn('Supabase middleware bypass:', error)
+    console.warn('Supabase middleware bypass/timeout:', error)
+    // If not public and auth timed out or threw, safely redirect to login instead of crashing with 504
+    if (!isPublic && !isApi) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      url.searchParams.set('redirect', pathname)
+      return NextResponse.redirect(url)
+    }
   }
 
   return response
